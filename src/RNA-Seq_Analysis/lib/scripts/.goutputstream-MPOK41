@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+
+from audioop import reverse
+from snakemake import shell
+from concurrent.futures import ThreadPoolExecutor
+import re
+import os
+from Bio import SeqIO
+import math
+
+'''Creating the pool for multithreading'''
+
+#pool = ThreadPoolExecutor(max_workers=snakemake.threads)
+pool = ThreadPoolExecutor(max_workers=4)
+
+'''Looking for the size of longer read in the genome FASTQ file'''
+
+#listLengthReads = []
+
+#referenceGtfFile = open(snakemake.params.referenceGTF, "r")
+
+#for line in referenceGtfFile:
+#    lineWithoutEndlineCharacter = line.replace("\n", "")
+#    lineSplitted = lineWithoutEndlineCharacter.split("\t")
+#    readLength = int(lineSplitted[4]) - int(lineSplitted[3])
+#    listLengthReads.append(readLength)
+
+#referenceGtfFile.close()
+
+
+
+'''Computing the effective genome size (part of the gemome which is mappable)
+for the normalisation of the library'''
+
+shell('expr "$(faCount {referenceGenome} | tail -n 1 | cut -f 2)" - $(faCount {referenceGenome} | tail -n 1 | cut -f 7) > effectiveGenomeSize.txt'.format(referenceGenome=snakemake.params.referenceGenome))
+effectiveGenomeSize = open('effectiveGenomeSize.txt', 'r').readline()
+
+'''Deleting the temporary file'''
+
+shell('rm effectiveGenomeSize.txt')
+
+'''Counting the number of sequences in the Genome fasta file'''
+
+fastaSequencesCounter=0
+
+fastaReferenceSequences = open("{referenceGenome}".format(referenceGenome=snakemake.params.referenceGenome), "r")
+
+for lineFasta in fastaReferenceSequences:
+    if lineFasta.startswith(">"):
+        fastaSequencesCounter += 1
+
+fastaReferenceSequences.close()
+
+
+'''Retrieving the bigger sequence in the file'''
+
+lengthMaxReadReferenceGenome = 0
+
+with open("{referenceGenome}".format(referenceGenome=snakemake.params.referenceGenome)) as handle:
+    for record in SeqIO.parse(handle, "fasta"):
+        if (len(record.seq) > lengthMaxReadReferenceGenome):
+            lengthMaxReadReferenceGenome = len(record.seq)
+
+'''Building the index from the reference genome'''
+
+
+#shell("STAR --runThreadN {threadsNumber} --runMode genomeGenerate --genomeFastaFiles {referenceGenome}\
+#    --sjdbGTFfile {referenceGTF} --sjdbOverhang {biggerReadMinusOne} --genomeChrBinNbits {ratioGenomeReference} --limitGenomeGenerateRAM 64000000000".format(
+#    referenceGenome=snakemake.params.referenceGenome, threadsNumber=snakemake.threads, referenceGTF=snakemake.params.referenceGTF, 
+#    biggerReadMinusOne=lengthMaxReadReferenceGenome - 1, ratioGenomeReference=min(18, math.log2((int(effectiveGenomeSize))/fastaSequencesCounter))))
+
+
+
+shell("STAR --runThreadN {threadsNumber} --runMode genomeGenerate --genomeFastaFiles {referenceGenome}\
+    --sjdbGTFfile {referenceGTF} --genomeChrBinNbits {ratioGenomeReference} --limitGenomeGenerateRAM 64000000000".format(
+    referenceGenome=snakemake.params.referenceGenome, threadsNumber=snakemake.threads, referenceGTF=snakemake.params.referenceGTF, 
+    ratioGenomeReference=min(18, math.log2((int(effectiveGenomeSize))/fastaSequencesCounter))))
+
+'''Creating the list of files to get from input folders'''
+
+fastqFiles = []
+
+
+'''Creating the function to build the alignment''' 
+
+def bowtieAlignment(forwardFile, reverseFile, outputFile):
+
+    outputFile = outputFile.split(".")[0]
+    outputFile = outputFile + ".sam"
+
+    return(shell("STAR --readFilesIn {forwardFile} {reverseFile} --outFileNamePrefix {outputFile}"\
+        .format(forwardFile=forwardFile,reverseFile=reverseFile,outputFile=outputFile)))
+
+
+'''Iterating all the files in the folders to make the mapping against the reference genome'''
+
+for inputFolder, outputFile in zip(snakemake.input, snakemake.output):
+    
+    listOfFilesInsideDirectory = os.listdir(inputFolder)
+
+    # Iterating all the files in the folders 
+
+    for file in listOfFilesInsideDirectory:
+
+        if file.endswith('.fq'):
+            fastqFiles.append(file)
+    
+    outputFileSplitted = outputFile.split(".fq")[0]
+    
+    #if re.match('_val_1', fastqFiles[0]):
+
+    if fastqFiles[0].endswith('_val_1.fq'):
+        pool.submit(bowtieAlignment, inputFolder + '/' + fastqFiles[0], inputFolder + '/' + fastqFiles[1], outputFileSplitted)
+
+    else:
+        pool.submit(bowtieAlignment, inputFolder + '/' + fastqFiles[1], inputFolder + '/' + fastqFiles[0], outputFileSplitted)
+    
+    fastqFiles = []
+
+pool.shutdown(wait=True)
+

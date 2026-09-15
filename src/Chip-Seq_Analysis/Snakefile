@@ -1,0 +1,1204 @@
+# Loading Librairies
+
+import sys
+import subprocess
+from snakemake.utils import min_version
+import os
+
+
+from lib.scripts.FileManagement import FileManagement
+
+
+# Workflow works only from Snkamake 6.0 version
+
+min_version("6.0")
+
+
+# Defining variables to use in the workflow
+
+ChIPType = "" # (data/Chip-Seq)/"technology type"
+DATASET = "RichardData/ESC" # (data/Chip-Seq/Fastq)/"Dataset"
+INPUTDATASET = ""
+DATATYPE = ["Control"] # (data/Chip-Seq/Fastq/Dataset)/"Condition1", "Condition2"
+DatasetCtrlAbrevInFile = "ESC_Kat5_"
+threadsNumber = workflow.cores
+OSComputer = "Linux"
+CondaEnvPathName = "/media/sheikhhpc/58bd26c7-a7e6-47a0-8bbc-524b51ca4a32/micromamba/envs/ChIPAnalysisMamba"
+condaEnvironment = "ChIPAnalysisMambaLinux.yml"
+referenceGenome = (
+    "../../data/Chip-Seq/GenomeFasta/Mus_musculus.GRCm38.dna.primary_assembly.fa"
+)
+genomeIndexFolder = "../../data/Chip-Seq/GenomeIndexFolder/MusMusculus"
+bedGenesFiles = "../../data/Chip-Seq/BEDFile/Mus_musculus.GRCm38.100.bed"
+peaksCallingType = 'None'
+peaksCallingMergedBam = False
+PairedEnd = True
+scriptPath = "lib/scripts"
+organism = "mm"
+typeheatmap = "geneBody"
+cpusPerTasks = 60
+
+
+# Computing the FileManagement object to handle with files
+
+fileManagement = FileManagement(
+    dataset=DATASET,
+    datasetype=DATATYPE,
+    inputpath=f"../../data/Chip-Seq/Fastq/{ChIPType}/",
+    outputpath=f"../../output/Chip-Seq/{ChIPType}/",
+    pairedend=PairedEnd,
+)
+
+
+# Loading input dataset to compute plots and peaks calling
+
+if DATASET != INPUTDATASET:
+    if INPUTDATASET != "":
+        InputFileManagement = FileManagement(
+            dataset=INPUTDATASET,
+            datasetype=DATATYPE,
+            inputpath=f"../../data/Chip-Seq/Fastq/{ChIPType}/",
+            outputpath=f"../../output/Chip-Seq/{ChIPType}/",
+            pairedend=PairedEnd,
+        )
+
+
+
+
+# Listing all the files and dataset types
+
+OUTPUTFOLDERS = fileManagement.returningoutputfolders()
+SAMPLESFILES = fileManagement.returninglistofsamples()
+FASTQSAMPLESFOLDERS = fileManagement.returninputfolders()
+
+
+# For paired end files
+
+pairedEndFoldersBasenames = fileManagement.returnlistofsampleswthoutpe()
+OUTPUTFOLDERSPELENGTH = fileManagement.returningpairedendlengthoutputfolders()
+
+
+# If data are paired end data pairedEndFoldersBasenames is used
+# else it is OUTPUTFOLDERS which are used to compute
+# destination filenames and foldernames
+
+if PairedEnd:
+    outputFolderNames = OUTPUTFOLDERSPELENGTH
+    outputFolderBasenameNames = pairedEndFoldersBasenames
+
+else:
+    outputFolderNames = OUTPUTFOLDERS
+    outputFolderBasenameNames = SAMPLESFILES
+
+
+# Creating the folders for the main steps of the workflow
+# These folders are always created even if the workflow
+# is used to process input raw data
+
+
+FASTQCFolders = [
+    "{pathway}/FastQC/{sample}".format(pathway=pathway, sample=sample)
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+
+if PairedEnd:
+    newFASTQCFolders = []
+
+    for folder in FASTQCFolders:
+        newFASTQCFolders.append(folder)
+        newFASTQCFolders.append(folder)
+
+    FASTQCFolders = newFASTQCFolders
+    del newFASTQCFolders
+
+
+TrimGalorePaths = [
+    f"{pathway}/Trimming/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+MappingFolders = [
+    f"{pathway}/Mapping/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+MAPQFolders = [
+    f"{pathway}/MAPQ/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+samStatMappingFolders = [
+    f"{pathway}/SamStatsMapping/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+samStatMAPQFolders = [
+    f"{pathway}/SamStatsMAPQ/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+samStatsPCRDuplicatesRemoveFolders = [
+    f"{pathway}/SamStatsPCRDuplicates/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+PCRDuplicatesRemovedFolders = [
+    f"{pathway}/NoDup/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+QualControlFolder = [
+    f"{pathway}/QualControlMetricsFiles/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+bigWigFolders = [
+    f"{pathway}/bigWig/{sample}"
+    for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+]
+
+
+BigWigMergeFolders = [
+    f"../../output/Chip-Seq/{ChIPType}/{DATASET}/BigWigMerge/{dataType}"
+    for dataType in DATATYPE
+]
+
+bamFilesMergedFolders = [
+    f"../../output/Chip-Seq/{ChIPType}/{DATASET}/BamFilesMerged/{dataType}"
+    for dataType in DATATYPE
+]
+
+BigWigComapreFolder = (
+    f"../../output/Chip-Seq/{ChIPType}/{DATASET}/BigWigCompare"
+)
+
+multiBamSummaryFolder = (
+    f"../../output/Chip-Seq/{ChIPType}/{DATASET}/MultiBamFolder"
+)
+
+correlationBamPlotFolder = (
+    f"../../output/Chip-Seq/{ChIPType}/{DATASET}/CorrelationBamPlot"
+)
+
+listOfFoldersToCreate = [
+    FASTQCFolders,
+    TrimGalorePaths,
+    MappingFolders,
+    MAPQFolders,
+    samStatMappingFolders,
+    samStatMAPQFolders,
+    samStatsPCRDuplicatesRemoveFolders,
+    PCRDuplicatesRemovedFolders,
+    QualControlFolder,
+    bigWigFolders,
+    BigWigMergeFolders,
+    bamFilesMergedFolders,
+    multiBamSummaryFolder,
+    correlationBamPlotFolder,
+]
+
+
+# If dataset is different from the input dataset
+# Then we compute some plots we don't compute when 
+# the pipeline is run on the INPUT only
+
+
+if DATASET != INPUTDATASET:
+    StrandCorrelationFolders = [
+        f"{pathway}/StrandCorrelations/{sample}"
+        for pathway, sample in zip(outputFolderNames, outputFolderBasenameNames)
+    ]
+
+    fingerprintsPlotsFolders = (
+        f"../../output/Chip-Seq/{ChIPType}/{DATASET}/Fingerprints"
+    )
+
+    CoverageMatrixFolders = [
+        f"../../output/Chip-Seq/{ChIPType}/{DATASET}/CoverageMatrixFiles/{dataType}"
+        for dataType in DATATYPE
+    ]
+
+    BedFilesFolders = f"../../output/Chip-Seq/{ChIPType}/{DATASET}/BedFiles/{peaksCallingType}"
+
+    # If the pipeline is run in CutAndRun mode
+
+    if INPUTDATASET == "":
+        PeaksCallingTuple = fileManagement.creatingpeakscallingfolders(
+            ctrlcondition=DatasetCtrlAbrevInFile,
+            files=outputFolderBasenameNames,
+            peakscallingtype=peaksCallingType,
+        )
+
+        PeaksCallingFoldersBasenames = PeaksCallingTuple[0]
+        AssembledFilesPeaksCalling = PeaksCallingTuple[1]
+
+    else:
+        # Computing specific folder names and filenames
+        # to input if we run the pipeline by calling peaks with 
+        # input
+
+        SAMPLESFILESINPUT = InputFileManagement.returninglistofsamples()
+        
+        OUTPUTFOLDERSPELENGTHInput = (
+            InputFileManagement.returningpairedendlengthoutputfolders()
+        )
+        
+        pairedEndFoldersBasenamesInput = (
+            InputFileManagement.returnlistofsampleswthoutpe()
+        )
+        
+        OUTPUTFOLDERSInput = InputFileManagement.returningoutputfolders()
+
+        # If Paired-end mode
+
+        if PairedEnd:
+            outputFolderNamesInput = OUTPUTFOLDERSPELENGTHInput
+            outputFolderBasenameNamesInput = pairedEndFoldersBasenamesInput
+
+        else:
+            outputFolderNamesInput = OUTPUTFOLDERSInput
+            outputFolderBasenameNamesInput = SAMPLESFILESINPUT
+
+
+        BAMFoldersInput = [
+            f"{pathway}/NoDup/{sample}"
+            for pathway, sample in zip(
+                outputFolderNamesInput, outputFolderBasenameNamesInput
+            )
+        ]
+
+        BAMMergedFoldersInput = [
+            f"../../output/Chip-Seq/{ChIPType}/{INPUTDATASET}/BamFilesMerged/{dataType}"
+            for dataType in DATATYPE
+        ]
+
+        InputFilesPCRRemoved = [
+            f"{pathway}/{sample}_filtered_nodup.bam"
+            for pathway, sample in zip(BAMFoldersInput, outputFolderBasenameNamesInput)
+        ]
+
+        sortedInputFilesPCRRemoved = fileManagement.sortingbyconditions(
+            ctrlcondition=DatasetCtrlAbrevInFile,
+            files = InputFilesPCRRemoved)
+
+        InputFilesMergedBam = [
+            f"{bamFilesFolder}/{INPUTDATASET}_{dataType}.bam"
+            for bamFilesFolder, dataType in zip(BAMMergedFoldersInput, DATATYPE)
+        ]
+
+
+        PeaksCallingTuple = fileManagement.creatingpeakscallingfolders(
+            ctrlcondition=DatasetCtrlAbrevInFile,
+            files=outputFolderBasenameNames,
+            peakscallingtype=peaksCallingType,
+            inputfiles=outputFolderBasenameNamesInput,
+        )
+
+        PeaksCallingFoldersBasenames = PeaksCallingTuple[0]
+        AssembledFilesPeaksCalling = PeaksCallingTuple[1]
+
+
+
+    PeaksCallingFolders = [
+        f"../../output/Chip-Seq/{ChIPType}/{DATASET}/PeaksCalling/{peaksCallingType}/{sample}"
+        for sample in PeaksCallingFoldersBasenames
+    ]
+
+    FripFolders = [
+        f"../../output/Chip-Seq/{ChIPType}/{DATASET}/FRIPScore/{peaksCallingType}/{sample}"
+        for sample in PeaksCallingFoldersBasenames
+    ]
+
+    
+
+    # Extending the list of folders with the new ones
+
+    listOfFoldersToCreate.extend(
+        [
+            fingerprintsPlotsFolders,
+            StrandCorrelationFolders,
+            PeaksCallingFolders,
+            FripFolders,
+            BedFilesFolders,
+            CoverageMatrixFolders,
+        ]
+    )
+
+
+else:
+    InputFileManagement = FileManagement(
+        dataset=INPUTDATASET,
+        datasetype=DATATYPE,
+        inputpath=f"../../data/Chip-Seq/Fastq/{ChIPType}/",
+        outputpath=f"../../output/Chip-Seq/{ChIPType}/",
+        pairedend=PairedEnd,
+    )
+
+    # Computing specific folder names and filenames
+
+    SAMPLESFILESINPUT = InputFileManagement.returninglistofsamples()
+    OUTPUTFOLDERSPELENGTHInput = (
+        InputFileManagement.returningpairedendlengthoutputfolders()
+    )
+    pairedEndFoldersBasenamesInput = InputFileManagement.returnlistofsampleswthoutpe()
+    OUTPUTFOLDERSInput = InputFileManagement.returningoutputfolders()
+
+    BAMMergedFoldersInput = [
+        f"../../output/Chip-Seq/{ChIPType}/{INPUTDATASET}/BamFilesMerged/{dataType}"
+        for dataType in DATATYPE
+    ]
+
+    InputFilesMergedBam = [
+        f"{bamFilesFolder}/{INPUTDATASET}_{dataType}.bam"
+        for bamFilesFolder, dataType in zip(BAMMergedFoldersInput, DATATYPE)
+    ]
+
+    if PairedEnd:
+        outputFolderNamesInput = OUTPUTFOLDERSPELENGTHInput
+        outputFolderBasenameNamesInput = pairedEndFoldersBasenamesInput
+
+    else:
+        outputFolderNamesInput = OUTPUTFOLDERSInput
+        outputFolderBasenameNamesInput = SAMPLESFILESINPUT
+
+    PeaksCallingFolders = [
+        f"../../output/Chip-Seq/{ChIPType}/{DATASET}/PeaksCalling/{peaksCallingType}MergedInputBam/{dataType}"
+        for dataType in DATATYPE
+    ]
+
+    PeaksCallingTuple = fileManagement.creatingpeakscallingfolders(
+        ctrlcondition=DatasetCtrlAbrevInFile,
+        files=outputFolderBasenameNames,
+        peakscallingtype=peaksCallingType,
+        inputfiles=outputFolderBasenameNamesInput,
+    )
+
+    PeaksCallingFoldersBasenames = PeaksCallingTuple[0]
+    AssembledFilesPeaksCalling = PeaksCallingTuple[1]
+
+
+# Creating selected folders according data
+
+
+for directory in listOfFoldersToCreate:
+    if type(directory) is list:
+        for directoryInList in directory:
+            shell(f"mkdir -p {directoryInList}")
+    else:
+        shell(f"mkdir -p {directory}")
+
+
+# Creating necessary output fillesnames for the all rules
+
+
+HTMLReportFASTQCBefTrimming = [
+    f"{pathway}/{sample}_fastqc.html"
+    for pathway, sample in zip(FASTQCFolders, SAMPLESFILES)
+]
+
+
+FASTQsamplesAfterTrimming = [
+    f"{samples}" for samples in 
+        fileManagement.returningtrimmingsamples()
+]
+
+
+samFilesMapping = [
+    f"{pathway}/{sample}.sam" for pathway, sample in 
+        zip(MappingFolders, outputFolderBasenameNames)
+]
+
+
+samStatReportFilesMapping = [
+    f"{pathway}/{sample}.samStatsReport" 
+    for pathway, sample in zip(samStatMappingFolders, outputFolderBasenameNames)
+]
+
+
+samFlagReportFilesMapping = [
+    f"{pathway}/{sample}.samFlagsReport"
+    for pathway, sample in zip(samStatMappingFolders, outputFolderBasenameNames)
+]
+
+
+bamFilesMAPQFiltering = [
+    f"{pathway}/{sample}_filtered.bam"
+    for pathway, sample in zip(MAPQFolders, outputFolderBasenameNames)
+]
+
+
+samStatReportFilesMAPQFiltering = [
+    f"{pathway}/{sample}.samStatsReport"
+    for pathway, sample in zip(samStatMAPQFolders, outputFolderBasenameNames)
+]
+
+
+samFlagReportFilesMAPQFiltering = [
+    f"{pathway}/{sample}.samFlagsReport"
+    for pathway, sample in zip(samStatMAPQFolders, outputFolderBasenameNames)
+]
+
+
+bamFilesPCRDuplicatesFiltered = [
+    f"{pathway}/{sample}_filtered_nodup.bam"
+    for pathway, sample in zip(PCRDuplicatesRemovedFolders, outputFolderBasenameNames)
+]
+
+conditionSortedbamFilesPCRDuplicatesFiltered = fileManagement.sortingbyconditions(
+    ctrlcondition=DatasetCtrlAbrevInFile,
+    files=bamFilesPCRDuplicatesFiltered)
+
+samStatReportFilesPCRDuplicatesRemoved = [
+    f"{pathway}/{sample}.samStatsReport"
+    for pathway, sample in zip(
+        samStatsPCRDuplicatesRemoveFolders, outputFolderBasenameNames
+    )
+]
+
+
+samFlagReportFilesPCRDuplicatesRemoved = [
+    f"{pathway}/{sample}.samFlagsReport"
+    for pathway, sample in zip(
+        samStatsPCRDuplicatesRemoveFolders, outputFolderBasenameNames
+    )
+]
+
+
+bigWigFiles = [
+    f"{pathway}/{sample}_filtered_nodup.bw"
+    for pathway, sample in zip(bigWigFolders, outputFolderBasenameNames)
+]
+
+
+mergedBamFiles = [
+    f"{bamFilesFolder}/{DATASET}_{dataType}.bam"
+    for bamFilesFolder, dataType in zip(bamFilesMergedFolders, DATATYPE)
+]
+
+
+indexMergedBamFiles = [
+    f"{bamFilesFolder}/{DATASET}_{dataType}.bam.bai"
+    for bamFilesFolder, dataType in zip(bamFilesMergedFolders, DATATYPE)
+]
+
+
+mergedBigWigFiles = [
+    f"{bigWigFolder}/{DATASET}_{dataType}.bw"
+    for bigWigFolder, dataType in zip(BigWigMergeFolders, DATATYPE)
+]
+
+
+
+strandnessMetricsFiles = [
+    f"{iteratorQualityControlFolder}/{sample}_strandnessMetrics.txt"
+    for iteratorQualityControlFolder, sample in zip(
+        QualControlFolder, outputFolderBasenameNames
+    )
+]
+
+checkCoverageMetricsFiles = [
+    f"{iteratorQualityControlFolder}/{sample}_CheckCoverageMetrics.txt"
+    for iteratorQualityControlFolder, sample in zip(
+        QualControlFolder, outputFolderBasenameNames
+    )
+]
+
+
+mappingCoverageMetricsFiles = [
+    f"{iteratorQualityControlFolder}/{sample}_mappingCoverageMetrics.txt"
+    for iteratorQualityControlFolder, sample in zip(
+        QualControlFolder, outputFolderBasenameNames
+    )
+]
+
+genesDistribMetricsFiles = [
+    f"{iteratorQualityControlFolder}/{sample}_genesDistributionMetrics.txt"
+    for iteratorQualityControlFolder, sample in zip(
+        QualControlFolder, outputFolderBasenameNames
+    )
+]
+
+
+bigWigOfConditionComparison = (
+    f"{BigWigComapreFolder}/{DATASET}_Cond_comparison.bw"
+)
+
+
+multiBamSummary = f"{multiBamSummaryFolder}/multiBamSummary.npz"
+
+correlationBamPlot = f"{correlationBamPlotFolder}/heatmap_SpearmanCorr_readCounts.png"
+
+correlationBamMatrix = f"{correlationBamPlotFolder}/heatmap_SpearmanCorr_readCounts.tab"
+
+
+# Checking if pipeline is run on one or two datasets
+
+if len(mergedBigWigFiles) < 2:
+    singleDataset = True
+
+else:
+    singleDataset = False
+
+
+
+# Appending the necessary output for all the conditions and datatype in a list
+
+outputListRule = [
+    HTMLReportFASTQCBefTrimming,
+    FASTQsamplesAfterTrimming,
+    samFilesMapping,
+    samStatReportFilesMapping,
+    bamFilesMAPQFiltering,
+    samStatReportFilesMAPQFiltering,
+    samFlagReportFilesMAPQFiltering,
+    bamFilesPCRDuplicatesFiltered,
+    samStatReportFilesPCRDuplicatesRemoved,
+    samFlagReportFilesPCRDuplicatesRemoved,
+    bigWigFiles,
+    mergedBamFiles,
+    indexMergedBamFiles,
+    mergedBigWigFiles,
+    strandnessMetricsFiles,
+    checkCoverageMetricsFiles,
+    mappingCoverageMetricsFiles,
+    genesDistribMetricsFiles,
+    #bigWigOfConditionComparison,
+    multiBamSummary,
+    correlationBamMatrix,
+    correlationBamPlot,
+]
+
+
+# Launching only a part of the workflow on the input samples
+# if there is only input to analyse
+
+if DATASET != INPUTDATASET:
+    summaryResultsPlotFingerprintsFile = f"{fingerprintsPlotsFolders}/rawCounts.tab"
+
+    plotFingerPrintFigure = f"{fingerprintsPlotsFolders}/plotFingerPrint.png"
+
+    strandCorrelationOutputFiles = [
+        f"{pathway}/{sample}.spp.out"
+        for pathway, sample in zip(StrandCorrelationFolders, outputFolderBasenameNames)
+    ]
+
+    strandCorrelationsOutputFigures = [
+        f"{pathway}/{sample}_filtered_nodup_SPPPlot.pdf"
+        for pathway, sample in zip(StrandCorrelationFolders, outputFolderBasenameNames)
+    ]
+
+
+    peaksCallingOutputFiles = [
+        f"{pathway}/NA_peaks.narrowPeak"
+        for pathway in PeaksCallingFolders
+    ]
+
+    peaksSAFFileFormat = [
+        f"{pathway}/peaks.saf" for pathway in FripFolders
+    ]
+
+    FRIPOutputFiles = [
+        f"{pathway}/readsInPeaks.txt" for pathway in FripFolders
+    ]
+
+    # Adding output files to list of output to generate
+    # in case where we analyse samples and not only input
+
+    outputListRule.append(summaryResultsPlotFingerprintsFile)
+    outputListRule.append(plotFingerPrintFigure)
+    outputListRule.append(strandCorrelationOutputFiles)
+    outputListRule.append(strandCorrelationsOutputFigures)
+    outputListRule.append(peaksCallingOutputFiles)
+    outputListRule.append(peaksSAFFileFormat)
+    outputListRule.append(FRIPOutputFiles)
+
+
+    gzipCoverageMatrix = [
+        f"{coverageMatrix}/{datasetType}_around_TSS_matrixFile.gz"
+        for coverageMatrix, datasetType in zip(CoverageMatrixFolders, DATATYPE)
+    ]
+
+    heatmapMatrixFiles = [
+        f"{coverageMatrix}/{datasetType}_around_TSS_HeatmapMatrixFile"
+        for coverageMatrix, datasetType in zip(CoverageMatrixFolders, DATATYPE)
+    ]
+
+    profileAroundTSSPictures = [
+        f"{coverageMatrix}/{datasetType}_around_TSS_profile.png"
+        for coverageMatrix, datasetType in zip(CoverageMatrixFolders, DATATYPE)
+    ]
+
+    heatmapAroundTSSPictures = [
+        f"{coverageMatrix}/{datasetType}_around_TSS_matrix.pdf"
+        for coverageMatrix, datasetType in zip(CoverageMatrixFolders, DATATYPE)
+    ]
+
+    outputListRule.append(gzipCoverageMatrix)
+    outputListRule.append(heatmapMatrixFiles)
+    outputListRule.append(profileAroundTSSPictures)
+    outputListRule.append(heatmapAroundTSSPictures)
+
+    
+
+else:
+    peaksCallingOutputFiles = [
+        f"{pathway}/NA_peaks.narrowPeak"
+        for pathway in PeaksCallingFolders
+    ]
+
+    outputListRule.append(peaksCallingOutputFiles)
+
+
+# Beginning of the workflow
+
+
+rule all:
+    input:
+        outputListRule,
+
+
+# Performing FastQC before trimming
+
+
+rule fastQCBeforeTrim:
+    input:
+        [
+            f"{pathway}/{files}.fastq.gz"
+            for pathway, files in zip(FASTQSAMPLESFOLDERS, SAMPLESFILES)
+        ],
+    output:
+        htmlFASTAQC=HTMLReportFASTQCBefTrimming,
+        zipFASTAQC=[
+            f"{pathway}/{sample}_fastqc.zip"
+            for pathway, sample in zip(FASTQCFolders, SAMPLESFILES)
+        ],
+    threads: threadsNumber
+    conda:
+        condaEnvironment
+    params:
+        outputFolders=FASTQCFolders,
+        cpusPerTasks=cpusPerTasks,
+    script:
+        f"{scriptPath}/FASTQC.py"
+
+
+# Performing the trimming
+
+
+rule TrimGalore:
+    input:
+        rules.fastQCBeforeTrim.input,
+    output:
+        FASTQsamplesAfterTrimming,
+    conda:
+        condaEnvironment
+    params:
+        outputFolders=TrimGalorePaths,
+        cpusPerTasks=cpusPerTasks,
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/TrimGalore.py"
+
+
+# Performing the mapping
+
+
+rule MappingReadsOnGenome:
+    input:
+        FoldersTrimmedFastQ=TrimGalorePaths,
+        TrimmedFasta=rules.TrimGalore.output,
+    output:
+        samFilesMapping,
+    params:
+        referenceGenome=referenceGenome,
+        genomeIndexFolder=genomeIndexFolder,
+        organism=organism,
+        cpusPerTasks=cpusPerTasks,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/Mapping.py"
+
+
+# Computing a 'Mapping Report'
+
+
+rule samStatMapping:
+    input:
+        rules.MappingReadsOnGenome.output,
+    output:
+        SamStatsReports=samStatReportFilesMapping,
+        SamFlagsReports=samFlagReportFilesMapping,
+    params:
+        plotFolder=samStatMappingFolders,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/SamStats.py"
+
+
+# Removing the reads with a poor Mapping Quality
+
+
+rule MAPQ:
+    input:
+        rules.MappingReadsOnGenome.output,
+    output:
+        bamFilesMAPQFiltering,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    params:
+        referenceGenome=referenceGenome,
+        cpusPerTasks=cpusPerTasks,
+    script:
+        f"{scriptPath}/FilteringMappingQuality.py"
+
+
+# Generating a report relative to the reads trimmed by Mapping Quality
+
+
+rule samStatMAPQ:
+    input:
+        rules.MAPQ.output,
+    output:
+        SamStatsReports=samStatReportFilesMAPQFiltering,
+        SamFlagsReports=samFlagReportFilesMAPQFiltering,
+    params:
+        plotFolder=samStatMAPQFolders,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/SamStats.py"
+
+
+# Deleting PCR duplicates
+
+
+rule removePCRDuplicates:
+    input:
+        rules.MAPQ.output,
+    output:
+        bamFiles=bamFilesPCRDuplicatesFiltered,
+        indexedBamFiles=[
+            f"{pathway}/{sample}_filtered_nodup.bam.bai"
+            for pathway, sample in zip(
+                PCRDuplicatesRemovedFolders, 
+                outputFolderBasenameNames
+            )
+        ],
+        metricsFiles=[
+            f"{pathway}/{sample}_filtered_nodup_metrics.txt" 
+            for pathway, sample in zip(
+                PCRDuplicatesRemovedFolders, 
+                outputFolderBasenameNames
+            )
+        ]
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/MarkDuplicates.py"
+
+
+# Report concerning the PCR duplicates removing
+
+
+rule samStatPCRDuplicates:
+    input:
+        rules.removePCRDuplicates.output,
+    output:
+        SamStatsReports=samStatReportFilesPCRDuplicatesRemoved,
+        SamFlagsReports=samFlagReportFilesPCRDuplicatesRemoved,
+    params:
+        plotFolder=samStatsPCRDuplicatesRemoveFolders,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/SamStats.py"
+
+
+# Quality Control of the reads strandness
+
+
+rule QualControl:
+    input:
+        rules.removePCRDuplicates.output.bamFiles,
+    output:
+        strandnessOutputFiles=strandnessMetricsFiles,
+        checkCoverageOutputFiles=checkCoverageMetricsFiles,
+        mappingCoverageOutputFiles=mappingCoverageMetricsFiles,
+        genesDistribOutputFiles=genesDistribMetricsFiles,
+    conda:
+        condaEnvironment
+    threads: threadsNumber
+    params:
+        bedGenesFiles=bedGenesFiles,
+        cpusPerTasks=cpusPerTasks,
+    script:
+        f"{scriptPath}/QualCheck.py"
+
+
+# Computing bigWig files
+
+
+rule bamCoverage:
+    input:
+        rules.removePCRDuplicates.output.bamFiles,
+    output:
+        bigWigFiles,
+    conda:
+        condaEnvironment
+    params:
+        referenceGenome=referenceGenome,
+        cpusPerTasks=cpusPerTasks,
+    threads: threadsNumber
+    script:
+        f"{scriptPath}/bigWigComputation.py"
+
+
+# Merging Bigwig and comparing them from bam files
+
+if singleDataset:
+
+    rule bigWigMerge:
+        input:
+            CtrlBamFiles=conditionSortedbamFilesPCRDuplicatesFiltered[0]
+        output:
+            bamFilesMerged=mergedBamFiles,
+            bamFilesIndexMerged=indexMergedBamFiles,
+            bigWigMergedFiles=mergedBigWigFiles,
+            bigWigComapreFile=bigWigOfConditionComparison,
+        conda:
+            condaEnvironment
+        params:
+            referenceGenome=referenceGenome,
+            cpusPerTasks=cpusPerTasks,
+            singleDataset=singleDataset,
+        script:
+            f"{scriptPath}/MergeBigWig.py"
+
+else:
+
+    rule bigWigMerge:
+        input:
+            CtrlBamFiles=conditionSortedbamFilesPCRDuplicatesFiltered[0],
+            TreatBamFiles=conditionSortedbamFilesPCRDuplicatesFiltered[1],
+        output:
+            bamFilesMerged=mergedBamFiles,
+            bamFilesIndexMerged=indexMergedBamFiles,
+            bigWigMergedFiles=mergedBigWigFiles,
+            bigWigComapreFile=bigWigOfConditionComparison,
+        conda:
+            condaEnvironment
+        params:
+            referenceGenome=referenceGenome,
+            cpusPerTasks=cpusPerTasks,
+            singleDataset=singleDataset,
+        script:
+            f"{scriptPath}/MergeBigWig.py"
+
+
+# Computing a correlation plot between samples
+
+
+rule correlationBamPlot:
+    input:
+        rules.removePCRDuplicates.output.bamFiles,
+    output:
+        multiBamSummary=multiBamSummary,
+        correlationPlot=correlationBamPlot,
+        correlationMatrix=correlationBamMatrix,
+    params:
+        sampleNames=outputFolderBasenameNames,
+    threads: threadsNumber
+    conda:
+        condaEnvironment
+    script:
+        f"{scriptPath}/CorrelationBamPlot.py"
+
+
+if DATASET != INPUTDATASET:
+    # Computing Lorenz curves for quality control
+
+    if INPUTDATASET == "":
+        if singleDataset:
+
+            rule plotFingerPrint:
+                input:
+                    datasetFilesCtrl=conditionSortedbamFilesPCRDuplicatesFiltered[0],
+                output:
+                    plotFingerprintPicture=plotFingerPrintFigure,
+                    plotFingerprintRawCounts=summaryResultsPlotFingerprintsFile,
+                params:
+                    InputFilesCtrl="False",
+                    InputFilesTreat="False",
+                    cpusPerTasks=cpusPerTasks,
+                    singleDataset=singleDataset,
+                conda:
+                    condaEnvironment
+                threads: threadsNumber
+                script:
+                    f"{scriptPath}/plotFingerPrint.py"
+
+        else:
+
+            rule plotFingerPrint:
+                input:
+                    datasetFilesCtrl=conditionSortedbamFilesPCRDuplicatesFiltered[0],
+                    datasetFilesTreat=conditionSortedbamFilesPCRDuplicatesFiltered[1],
+                output:
+                    plotFingerprintPicture=plotFingerPrintFigure,
+                    plotFingerprintRawCounts=summaryResultsPlotFingerprintsFile,
+                params:
+                    InputFilesCtrl="False",
+                    InputFilesTreat="False",
+                    cpusPerTasks=cpusPerTasks,
+                    singleDataset=singleDataset,
+                conda:
+                    condaEnvironment
+                threads: threadsNumber
+                script:
+                    f"{scriptPath}/plotFingerPrint.py"
+
+    else:
+
+        rule plotFingerPrint:
+            input:
+                datasetFilesCtrl=conditionSortedbamFilesPCRDuplicatesFiltered[0],
+                datasetFilesTreat=conditionSortedbamFilesPCRDuplicatesFiltered[1],
+            output:
+                plotFingerprintPicture=plotFingerPrintFigure,
+                plotFingerprintRawCounts=summaryResultsPlotFingerprintsFile,
+            params:
+                InputFilesCtrl=sortedInputFilesPCRRemoved[0],
+                InputFilesTreat=sortedInputFilesPCRRemoved[1],
+                cpusPerTasks=cpusPerTasks,
+                singleDataset=singleDataset,
+            conda:
+                condaEnvironment
+            threads: threadsNumber
+            script:
+                f"{scriptPath}/plotFingerPrint.py"
+
+    # Computing Strand cross-correlation plots
+
+    rule SPP:
+        input:
+            rules.removePCRDuplicates.output.bamFiles,
+        output:
+            phantomPeaksPictures=strandCorrelationsOutputFigures,
+            phantomPeaksResults=strandCorrelationOutputFiles,
+        conda:
+            condaEnvironment
+        threads: threadsNumber
+        params:
+            CondaEnvPathName=CondaEnvPathName,
+        script:
+            f"{scriptPath}/phantompeaks.py"
+
+    # Computing the coverage matrix to prepare data for
+    # heatmap and coverage analysis
+
+    if not singleDataset:
+
+        rule coveraGeMatrix:
+            input:
+                datasetFilesCtrl=rules.bigWigMerge.output.bigWigMergedFiles[0],
+                datasetFilesTreat=rules.bigWigMerge.output.bigWigMergedFiles[1],
+                bedFiles=bedGenesFiles,
+            output:
+                gzipMatrixFile=gzipCoverageMatrix,
+                heatmapMatrixFile=heatmapMatrixFiles,
+            params:
+                cpusPerTasks=cpusPerTasks,
+                singleDataset=singleDataset,
+                typeheatmap=typeheatmap
+            conda:
+                condaEnvironment
+            threads: threadsNumber
+            script:
+                f"{scriptPath}/ComputeCoverageMatrix.py"
+
+    else:
+        rule coveraGeMatrix:
+            input:
+                datasetFilesCtrl=rules.bigWigMerge.output.bigWigMergedFiles[0],
+                bedFiles=bedGenesFiles,
+            output:
+                gzipMatrixFile=gzipCoverageMatrix,
+                heatmapMatrixFile=heatmapMatrixFiles,
+            params:
+                cpusPerTasks=cpusPerTasks,
+                singleDataset=singleDataset,
+                typeheatmap=typeheatmap
+            conda:
+                condaEnvironment
+            threads: threadsNumber
+            script:
+                f"{scriptPath}/ComputeCoverageMatrix.py"
+
+    
+    # Computing the profile plot around the TSS
+
+    rule profilePlotTSS:
+        input:
+            rules.coveraGeMatrix.output,
+        output:
+            profileAroundTSSPictures,
+        conda:
+            condaEnvironment
+        params:
+            cpusPerTasks=cpusPerTasks,
+            singleDataset=singleDataset,
+            typeheatmap=typeheatmap
+        script:
+            f"{scriptPath}/ComputeProfileAroundTSS.py"
+
+    
+    # Computing the heatmap plot around the TSS
+
+    rule heatmapPlotTSS:
+        input:
+            rules.coveraGeMatrix.output,
+        output:
+            heatmapAroundTSSPictures,
+        conda:
+            condaEnvironment
+        params:
+            cpusPerTasks=cpusPerTasks,
+            singleDataset=singleDataset,
+            typeheatmap=typeheatmap
+        script:
+            f"{scriptPath}/ComputeHeatmapAroundTSS.py"
+
+    
+    # Peaks calling
+
+    if INPUTDATASET != "":
+
+        rule PeaksCalling:
+            input:
+                datasetFiles=rules.removePCRDuplicates.output.bamFiles,
+                datasetFilesCtrl=rules.plotFingerPrint.input.datasetFilesCtrl,
+                datasetFilesTreat=rules.plotFingerPrint.input.datasetFilesTreat,
+                Inputfiles=InputFilesPCRRemoved,
+            output:
+                peaksCallingOutputFiles,
+            conda:
+                condaEnvironment
+            threads: threadsNumber
+            params:
+                peaksCallingType=peaksCallingType,
+                outDirs=PeaksCallingFolders,
+                CtrlCondition=DatasetCtrlAbrevInFile,
+                AssembledFilesPeaksCalling=AssembledFilesPeaksCalling,
+                peaksCallingOnMergedBam=peaksCallingMergedBam,
+                organism=organism,
+                cpusPerTasks=cpusPerTasks,
+            script:
+                f"{scriptPath}/MACS2.py"
+
+
+    # Peaks calling on CutAndRun mode
+
+    else:
+        if not peaksCallingMergedBam:
+            if singleDataset:
+
+                rule PeaksCalling:
+                    input:
+                        datasetFiles=rules.removePCRDuplicates.output.bamFiles,
+                        datasetFilesCtrl=rules.plotFingerPrint.input.datasetFilesCtrl,
+                    output:
+                        peaksCallingOutputFiles,
+                    conda:
+                        condaEnvironment
+                    threads: threadsNumber
+                    params:
+                        peaksCallingType=peaksCallingType,
+                        outDirs=PeaksCallingFolders,
+                        CtrlCondition=DatasetCtrlAbrevInFile,
+                        AssembledFilesPeaksCalling=AssembledFilesPeaksCalling,
+                        peaksCallingOnMergedBam=peaksCallingMergedBam,
+                        organism=organism,
+                        cpusPerTasks=cpusPerTasks,
+                    script:
+                        f"{scriptPath}/MACS2.py"
+
+            else:
+
+                rule PeaksCalling:
+                    input:
+                        datasetFiles=rules.removePCRDuplicates.output.bamFiles,
+                        datasetFilesCtrl=rules.plotFingerPrint.input.datasetFilesCtrl,
+                        datasetFilesTreat=rules.plotFingerPrint.input.datasetFilesTreat,
+                    output:
+                        peaksCallingOutputFiles,
+                    conda:
+                        condaEnvironment
+                    threads: threadsNumber
+                    params:
+                        peaksCallingType=peaksCallingType,
+                        outDirs=PeaksCallingFolders,
+                        CtrlCondition=DatasetCtrlAbrevInFile,
+                        AssembledFilesPeaksCalling=AssembledFilesPeaksCalling,
+                        peaksCallingOnMergedBam=peaksCallingMergedBam,
+                        organism=organism,
+                        cpusPerTasks=cpusPerTasks,
+                    script:
+                        f"{scriptPath}/MACS2.py"
+
+
+    # Convert bed files to saf files
+
+    rule convertBedToSaf:
+        input:
+            rules.PeaksCalling.output,
+        output:
+            peaksSAFFileFormat,
+        script:
+            f"{scriptPath}/convertBedToSaf.py"
+    
+
+    # Computing FRIP score
+
+    rule FripScoreComputing:
+        input:
+            bamFiles=rules.removePCRDuplicates.output.bamFiles,
+            safFiles=rules.convertBedToSaf.output,
+        output:
+            FRIPOutputFiles,
+        conda:
+            condaEnvironment
+        threads: threadsNumber
+        script:
+            f"{scriptPath}/FripScore.py"
+
+else:
+
+    rule PeaksCalling:
+        input:
+            datasetFiles=rules.bigWigMerge.output.bamFilesMerged,
+            datasetFilesCtrl=conditionSortedbamFilesPCRDuplicatesFiltered[0],
+            datasetFilesTreat=conditionSortedbamFilesPCRDuplicatesFiltered[1],
+            Inputfiles=InputFilesMergedBam,
+        output:
+            peaksCallingOutputFiles,
+        conda:
+            condaEnvironment
+        threads: threadsNumber
+        params:
+            peaksCallingType=peaksCallingType,
+            outDirs=PeaksCallingFolders,
+            CtrlCondition=DatasetCtrlAbrevInFile,
+            AssembledFilesPeaksCalling=AssembledFilesPeaksCalling,
+            peaksCallingOnMergedBam=peaksCallingMergedBam,
+            cpusPerTasks=cpusPerTasks,
+        script:
+            f"{scriptPath}/MACS2.py"
