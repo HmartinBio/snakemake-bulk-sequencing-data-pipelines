@@ -1,5 +1,3 @@
-# Bempedoic-acid-binds-PPAR-and-reprograms-the-Hepatic-Epigenetic-Transcriptional-and-Metabolic-states
-
 # Snakemake pipelines for ChIP-seq, RNA-seq and ATAC-seq
 
 This repository contains three Snakemake workflows for processing paired-end next-generation sequencing data:
