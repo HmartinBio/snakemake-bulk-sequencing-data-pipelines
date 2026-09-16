@@ -23,8 +23,8 @@ DATATYPE = ["Control"] # (data/Chip-Seq/Fastq/Dataset)/"Condition1", "Condition2
 DatasetCtrlAbrevInFile = "ESC_Kat5_"
 threadsNumber = workflow.cores
 OSComputer = "Linux"
-CondaEnvPathName = "/media/sheikhhpc/58bd26c7-a7e6-47a0-8bbc-524b51ca4a32/micromamba/envs/ChIPAnalysisMamba"
-condaEnvironment = "ChIPAnalysisMambaLinux.yml"
+CondaEnvPathName = "/media/sheikhhpc/58bd26c7-a7e6-47a0-8bbc-524b51ca4a32/micromamba/envs/ChIPSeqEnv"
+condaEnvironment = "ChIPSeqMambaEnv.yml"
 referenceGenome = (
     "../../data/Chip-Seq/GenomeFasta/Mus_musculus.GRCm38.dna.primary_assembly.fa"
 )
